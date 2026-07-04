@@ -30,16 +30,16 @@ The objective is to build a platform that remains reliable as applications evolv
 axiom-repo/
 │
 ├── packages/
-│   ├── cli/
-│   ├── core/
-│   └── dashboard/
+│   ├── axiom-cli/
+│   ├── axiom-core/
+│   └── axiom-dashboard/
 │
 └── docs/
 ```
 
 ## Package Responsibilities
 
-### cli
+### axiom-cli
 
 Technology:
 - Bun
@@ -58,7 +58,7 @@ The CLI must **never** contain execution logic.
 
 ---
 
-### core
+### axiom-core
 
 Technology:
 
@@ -80,7 +80,7 @@ This package owns all business logic.
 
 ---
 
-### dashboard
+### axiom-dashboard
 
 Technology:
 
@@ -130,7 +130,7 @@ LLMs are only used when confidence is insufficient.
 
 ## 6.
 
-Business logic belongs inside core.
+Business logic belongs inside axiom-core.
 
 ## 7.
 
@@ -507,6 +507,8 @@ Comments should explain **why**, not **what**.
 ---
 
 # Decision Framework
+
+> **Important**: Record every specific architectural or implementation decision made by AI agents or human contributors in the [DECISIONS.md](DECISIONS.md) file.
 
 When making engineering decisions, prioritize in this order:
 
