@@ -1,0 +1,35 @@
+[project]
+name = "axiom-core"
+version = "0.1.0"
+description = "Axiome v1 Recording Engine - Deterministic user interaction capture for web testing"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "playwright>=1.40.0",
+    "pydantic>=2.5.0",
+    "fastapi>=0.109.0",
+    "uvicorn[standard]>=0.27.0",
+    "websockets>=12.0",
+    "aiosqlite>=0.19.0",
+    "python-dotenv>=1.0.0",
+    "PyJWT>=2.8.0",
+    "supabase>=2.0.0",
+    "rapidfuzz>=3.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.21.0",
+]
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+
+[tool.setuptools]
+packages = ["core", "core.execution", "core.models", "core.recorder", "core.resolvers", "core.server", "core.db", "core.execution.test_generation", "core.recorder.core", "core.recorder.dom", "core.recorder.graph", "core.recorder.state", "core.recorder.transition"]
+package-dir = {"core" = "."}

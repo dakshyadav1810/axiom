@@ -508,6 +508,8 @@ Comments should explain **why**, not **what**.
 
 # Decision Framework
 
+> **Important**: Record every specific architectural or implementation decision made by AI agents or human contributors in the [DECISIONS.md](DECISIONS.md) file.
+
 When making engineering decisions, prioritize in this order:
 
 1. Correctness
