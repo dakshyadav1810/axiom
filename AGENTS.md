@@ -27,19 +27,19 @@ The objective is to build a platform that remains reliable as applications evolv
 # Repository Structure
 
 ```
-axiom-repo/
+axiom/
 │
 ├── packages/
-│   ├── axiom-cli/
-│   ├── axiom-core/
-│   └── axiom-dashboard/
+│   ├── cli/
+│   ├── core/
+│   └── dashboard/
 │
 └── docs/
 ```
 
 ## Package Responsibilities
 
-### axiom-cli
+### cli
 
 Technology:
 - Bun
@@ -58,7 +58,7 @@ The CLI must **never** contain execution logic.
 
 ---
 
-### axiom-core
+### core
 
 Technology:
 
@@ -80,7 +80,7 @@ This package owns all business logic.
 
 ---
 
-### axiom-dashboard
+### dashboard
 
 Technology:
 
@@ -130,7 +130,7 @@ LLMs are only used when confidence is insufficient.
 
 ## 6.
 
-Business logic belongs inside axiom-core.
+Business logic belongs inside core.
 
 ## 7.
 
