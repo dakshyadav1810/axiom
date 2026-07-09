@@ -3,6 +3,8 @@
 > Engineering guidelines for contributors and AI coding agents working on **Axiom**.
 >
 > This document defines the architectural boundaries, development philosophy, and engineering conventions for the project. It should be treated as the authoritative guide for implementing new features and modifying existing systems.
+>
+> **Stack:** Axiom is a single-language **TypeScript on Node.js** project — see [ADR-003](ADR-003.md) and [PLAN-001](PLAN-001.md). Earlier references to Bun, Python, or a standalone Next.js dashboard are superseded.
 
 ---
 
@@ -30,31 +32,48 @@ The objective is to build a platform that remains reliable as applications evolv
 axiom/
 │
 ├── packages/
-│   ├── cli/
-│   ├── core/
-│   └── dashboard/
+│   ├── shared/     (Zod IR — single source of truth)
+│   ├── cli/        (orchestration + MCP server)
+│   ├── core/       (Fastify server — all business logic)
+│   └── dashboard/  (Vite SPA — bundled into core)
 │
 └── docs/
 ```
 
+The whole workspace is TypeScript on Node.js LTS (22+), managed with pnpm workspaces + Turborepo.
+
 ## Package Responsibilities
+
+### shared
+
+Technology:
+- TypeScript
+- Zod
+
+Responsibilities:
+
+- The Spec IR (`spec.json` step + Tier-1 target), `candidates.json`, resolver models, config, REST DTOs, and WebSocket message shapes — defined **once** as Zod schemas and imported by every other package.
+
+This package is the single source of truth for the IR. It replaces per-package schema duplication (Pydantic vs. Zod).
+
+---
 
 ### cli
 
 Technology:
-- Bun
+- Node.js
 - TypeScript
 
 Responsibilities:
 
-- CLI entry point
+- CLI entry point (commander)
 - Process orchestration
-- Backend lifecycle management
-- Dashboard lifecycle management
-- MCP communication
+- Core (backend) lifecycle management
+- Dashboard lifecycle management (opening it — it is served by core)
+- MCP server (official TypeScript SDK) — the agent-facing control plane started by `axiom start`
 - Configuration loading
 
-The CLI must **never** contain execution logic.
+The CLI must **never** contain execution logic. MCP tools translate to REST/WebSocket calls into core — never internal cross-package calls.
 
 ---
 
@@ -62,19 +81,24 @@ The CLI must **never** contain execution logic.
 
 Technology:
 
-- Python
+- Node.js
+- TypeScript
+- Fastify
+- Playwright
 
 Responsibilities:
 
 - Test execution
 - Recording
 - Playwright integration
-- Multi-Signal Resolver
+- Multi-Signal Resolver (semantic signal via local embedding search)
+- Grounding
 - Benchmarking
 - API execution
-- Storage
+- Storage (SQLite cache via better-sqlite3 + Drizzle)
 - REST API
 - WebSocket server
+- Serving the bundled dashboard (static assets)
 
 This package owns all business logic.
 
@@ -84,9 +108,10 @@ This package owns all business logic.
 
 Technology:
 
+- Vite
 - React
-- Next.js
 - TypeScript
+- Tailwind
 
 Responsibilities:
 
@@ -96,7 +121,7 @@ Responsibilities:
 - Test management
 - Live execution monitoring
 
-The dashboard is only a client.
+The dashboard is only a client. It is built to static assets and **served directly by the core server** — it is not a separately deployable package. Keep it deliberately minimal.
 
 ---
 
@@ -106,7 +131,7 @@ These rules should almost never be violated.
 
 ## 1.
 
-Python owns execution.
+The core (TypeScript/Node) owns execution.
 
 ## 2.
 
@@ -126,7 +151,7 @@ The CLI never executes tests.
 
 The resolver is deterministic first.
 
-LLMs are only used when confidence is insufficient.
+The semantic signal uses a **local, fixed-weight embedding model** (deterministic, no generative/network call), not a runtime LLM. When deterministic confidence is insufficient, the step is marked stale for author review — an LLM is only re-invoked during explicit, developer-triggered maintenance (see ADR-001, ADR-002).
 
 ## 6.
 
@@ -164,9 +189,9 @@ Responsible for:
 - stopping services
 - configuration
 - project initialization
-- spawning Python backend
+- spawning the core (Node) backend
 - opening dashboard
-- MCP communication
+- hosting the MCP server
 
 Not responsible for:
 
@@ -178,18 +203,20 @@ Not responsible for:
 
 ---
 
-## Backend
+## Core (Backend)
 
 Responsible for:
 
 - execution
 - recording
+- grounding
 - state management
 - storage
 - APIs
 - resolver
-- AI integration
+- authoring-time AI integration (via MCP)
 - analytics
+- serving the bundled dashboard
 
 ---
 
@@ -217,7 +244,7 @@ Dashboard
         │
  REST / WebSocket
         │
-Python Backend
+   Core (Node)
         │
  Playwright
 ```
@@ -332,9 +359,9 @@ Signals include:
 - structure
 - index
 
-Deterministic matching is attempted first.
+Deterministic matching is attempted first. The semantic signal is a **local embedding search** (fixed-weight ONNX model + cosine similarity, embeddings cached in SQLite) — deterministic, not a generative LLM call.
 
-AI verification is only used when confidence falls below predefined thresholds.
+When confidence falls below the predefined bands, the step is marked stale for author review; an LLM re-enters only in explicit maintenance healing (ADR-002), never automatically at runtime.
 
 Never make the LLM the primary resolution strategy.
 
