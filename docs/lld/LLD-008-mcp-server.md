@@ -1,7 +1,7 @@
 # LLD-008: MCP Server + Core REST/WS Surface
 
 **Status:** Draft
-**Implements:** [SPEC-005](../specs/SPEC-005-mcp-cli-dashboard.md), [ADR-002 §6](../../ADR-002.md), [ADR-003 §6](../../ADR-003.md)
+**Implements:** [SPEC-005](../specs/SPEC-005-mcp-cli-dashboard.md), [ADR-002 §6](../adr/ADR-002.md), [ADR-003 §6](../adr/ADR-003.md)
 **Depends on:** [LLD-001](./LLD-001-shared-ir.md) (DTOs/WS), [LLD-009](./LLD-009-cli.md) (host)
 
 > The agent-facing **MCP server** lives in the **CLI** and is a thin proxy: every tool translates to a
@@ -28,14 +28,19 @@
 |---|---|---|---|
 | `getMap` | `{ entryUrl }` | `GET /kdg?entry=` | `KdgContext` |
 | `getDelta` | `{ sinceVersion }` | `GET /kdg/delta?since=` | KDG diff |
-| `authorTest` | `AuthorRequest` | `POST /tests` (author) | `{ testId, spec }` |
-| `submitSpec` | `SpecIR` | `POST /tests` (submit) | `{ testId }` |
+| `submitSpec` | `SpecIR` | `POST /tests` | `{ testId, spec }` |
 | `groundTest` | `{ testId }` | `POST /tests/:id/ground` | `GroundingOutcome` summary |
 | `runTest` | `RunRequest` | `POST /runs` | `{ runId }` |
-| `pollRun` / `getReport` | `{ runId }` | `GET /runs/:id` | `RunReport` |
+| `getReport` (alias `pollRun`) | `{ runId }` | `GET /runs/:id` | `RunReport` |
 | `healing` | `{ testId }` | `GET /tests/:id/repair` | `RepairPayload` |
-| `updateTest` | `{ testId, stepIds }` | `POST /tests/:id/maintain` | `RepairResult` diff |
+| `updateTest` | `{ testId, stepIds, spec }` | `POST /tests/:id/maintain` | `RepairResult` diff |
 | `deleteTest` | `{ testId }` | `DELETE /tests/:id` | `{ ok }` |
+
+`getReport` and `pollRun` are the **same** tool/endpoint under two names (one-shot vs. repeated fetch) — a
+single `GET /runs/:id` handler backs both. There is no `authorTest` tool and no "core generates a spec"
+path anywhere: `submitSpec` is the only way a spec is created, and `updateTest`'s `spec` is **required**
+— the agent reads `healing` for context, re-authors the fix in its own session, and submits it here. Core
+never calls an LLM provider (LLD-002, LLD-006 §6).
 
 Tool schemas are the `shared` Zod types → JSON Schema, so the agent sees exact contracts.
 
@@ -43,9 +48,9 @@ Tool schemas are the `shared` Zod types → JSON Schema, so the agent sees exact
 
 | Method + path | Body / query | Response | Owner LLD |
 |---|---|---|---|
-| `POST /tests` | `AuthorRequest` \| `SpecIR` | `SpecIR` + `testId` | LLD-002 |
+| `POST /tests` | `SpecIR` | `SpecIR` + `testId` | LLD-002 |
 | `POST /tests/:id/ground` | — | `GroundingOutcome` | LLD-003 |
-| `POST /tests/:id/maintain` | `{ stepIds }` | `RepairResult` | LLD-006 |
+| `POST /tests/:id/maintain` | `{ stepIds, spec }` | `RepairResult` | LLD-006 |
 | `GET /tests/:id/repair` | — | `RepairPayload` | LLD-006 |
 | `GET /tests` / `GET /tests/:id` | — | summaries / `GroundedTest` | LLD-007 |
 | `DELETE /tests/:id` | — | `{ ok }` | LLD-007 |
@@ -75,8 +80,10 @@ there is one wire contract.
 ## 6. Error model
 
 Uniform typed errors over REST/WS: `{ error: { code, message, details? } }` with codes for
-`validation`, `not_found`, `ungrounded`, `stale`, `provider_error` (authoring), `browser_error`. MCP maps
-these to tool errors so the agent gets structured failures.
+`validation` (schema/lint failure — this is the one `submitSpec` returns when the agent's spec is
+rejected), `not_found`, `ungrounded`, `stale`, `browser_error`. There is no `provider_error` — core never
+calls a provider, so there's nothing there to fail. MCP maps these to tool errors so the agent gets
+structured failures.
 
 ## 7. Boundaries
 

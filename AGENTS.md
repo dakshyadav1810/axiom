@@ -4,7 +4,7 @@
 >
 > This document defines the architectural boundaries, development philosophy, and engineering conventions for the project. It should be treated as the authoritative guide for implementing new features and modifying existing systems.
 >
-> **Stack:** Axiom is a single-language **TypeScript on Node.js** project — see [ADR-003](ADR-003.md) and [PLAN-001](PLAN-001.md). Earlier references to Bun, Python, or a standalone Next.js dashboard are superseded.
+> **Stack:** Axiom is a single-language **TypeScript on Node.js** project — see [ADR-003](docs/adr/ADR-003.md) and [PLAN-001](docs/PLAN-001.md). Earlier references to Bun, Python, or a standalone Next.js dashboard are superseded.
 
 ---
 
@@ -535,7 +535,7 @@ Comments should explain **why**, not **what**.
 
 # Decision Framework
 
-> **Important**: Record every specific architectural or implementation decision made by AI agents or human contributors in the [DECISIONS.md](DECISIONS.md) file.
+> **Important**: Record every specific architectural or implementation decision made by AI agents or human contributors in the [DECISIONS.md](docs/DECISIONS.md) file.
 
 When making engineering decisions, prioritize in this order:
 

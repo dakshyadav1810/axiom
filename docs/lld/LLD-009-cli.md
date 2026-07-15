@@ -1,7 +1,7 @@
 # LLD-009: CLI Orchestrator (`packages/cli`)
 
 **Status:** Draft
-**Implements:** [SPEC-005](../specs/SPEC-005-mcp-cli-dashboard.md), [ADR-003 §6](../../ADR-003.md), [PLAN-001](../../PLAN-001.md)
+**Implements:** [SPEC-005](../specs/SPEC-005-mcp-cli-dashboard.md), [ADR-003 §6](../adr/ADR-003.md), [PLAN-001](../PLAN-001.md)
 **Depends on:** [LLD-008](./LLD-008-mcp-server.md) (MCP host), [LLD-001](./LLD-001-shared-ir.md) (config/DTOs)
 
 > `npx axiom` — the single process a developer or agent starts. It orchestrates lifecycle (spawn + health
@@ -15,7 +15,7 @@
 ```
 packages/cli/src/
 ├── index.ts            # commander program (entry: bin "axiom")
-├── commands/           # init | start | stop | author | ground | test | heal | report
+├── commands/           # init | start | stop | ground | test | heal | report
 ├── core-process.ts     # spawn + health-check + shutdown the core server (execa)
 ├── client.ts           # typed REST/WS client for core (uses shared DTOs)
 ├── mcp/server.ts       # @modelcontextprotocol/sdk stdio server (LLD-008)
@@ -29,13 +29,18 @@ packages/cli/src/
 | `axiom init` | scaffold `.axiom/` + `axiom.config.json` | local FS |
 | `axiom start` | spawn core, start MCP (stdio), serve+open dashboard | `core-process` + `mcp/server` |
 | `axiom stop` | graceful shutdown of core | `core-process` |
-| `axiom author "<intent>" --entry <url>` | author a spec | `POST /tests` |
 | `axiom ground <testId>` | first-run grounding | `POST /tests/:id/ground` |
 | `axiom test [<testId>]` | run test / suite; print report; stream to dashboard | `POST /runs` + `GET /ws/runs/:id` |
-| `axiom heal <testId>` | maintenance heal for stale steps | `POST /tests/:id/maintain` |
+| `axiom heal <testId>` | print the repair payload for a stale test | `GET /tests/:id/repair` |
 | `axiom report <runId>` | print a stored run report | `GET /runs/:id` |
 
 `axiom test` sets the process exit code from the run verdict (0 pass / non-zero fail) for CI use.
+
+**There is no `axiom author` command.** Axiom has no LLM client of its own, so there is nothing a bare CLI
+invocation could call to generate a spec — authoring only happens through a connected agent's `submitSpec`
+MCP call (SPEC-001 §2). `axiom heal` is read-only for the same reason: it fetches and prints the repair
+payload (`{ specIR, testCase, kdg }`) so the developer can hand it to their agent; it does not attempt a
+repair itself.
 
 ## 3. Lifecycle (`core-process.ts`, `execa`)
 

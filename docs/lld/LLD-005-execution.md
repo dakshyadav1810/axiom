@@ -1,8 +1,8 @@
 # LLD-005: Execution Engine (`core/execution`)
 
 **Status:** Draft
-**Implements:** [SPEC-003](../specs/SPEC-003-execution+assert.md), [ADR-002 §4](../../ADR-002.md)
-**Depends on:** [LLD-001](./LLD-001-shared-ir.md), [LLD-004](./LLD-004-resolver.md), [LLD-003](./LLD-003-grounding+normalize.md) (reground), [LLD-007](./LLD-007-storage.md)
+**Implements:** [SPEC-003](../specs/SPEC-003-execution+assert.md), [ADR-002 §4](../adr/ADR-002.md)
+**Depends on:** [LLD-001](./LLD-001-shared-ir.md), [LLD-004](./LLD-004-resolver.md), [LLD-006](./LLD-006-healing.md) (runtimeHeal), [LLD-007](./LLD-007-storage.md)
 
 > Deterministic, LLM-free execution. A **Step Dispatcher** iterates a grounded test and routes each step
 > to a **UI / API / DB adapter**; the assertion engine evaluates outcomes; a verdict is aggregated and
@@ -66,22 +66,41 @@ async run(test, { vars, emit }) {
 
 ## 4. UI adapter — the locate ladder (`ui.ts` + `locate.ts`)
 
+The ladder is **cache → artifact → runtime heal → stale**. The SQLite `resolution_cache` (LLD-007) is the
+runtime fast path and is consulted *first*; the versioned `grounded.json` selector is the durable seed used
+when the cache is cold (fresh clone, evicted entry) or the page changed. Both lookups are keyed/validated by
+the **current page's `domHash`**, so a materially changed page misses cache and falls through to heal rather
+than reusing a stale selector.
+
 ```ts
 async locate(step, ctx): Promise<LocateResult> {
-  const sel = step.target?.resolution.cachedSelector;
-  if (sel) {
-    const loc = ctx.page.locator(sel);
-    if (await isUniqueVisible(loc)) return { locator: loc, source: "cached" };
+  const domHash = await ctx.domHash(ctx.page);                   // signature of the current page state
+
+  // 1. runtime fast path — the SQLite selector cache (LLD-007), keyed by (testId, stepId, domHash)
+  const hit = ctx.cache.getSelector(ctx.testId, step.id, domHash);
+  if (hit && await isUniqueVisible(ctx.page.locator(hit.cachedSelector)))
+    return { locator: ctx.page.locator(hit.cachedSelector), source: "cached" };
+
+  // 2. durable seed — the selector baked into the grounded artifact at grounding time
+  const seed = step.target?.resolution?.cachedSelector;
+  if (seed && await isUniqueVisible(ctx.page.locator(seed))) {
+    ctx.cache.putSelector({ testId: ctx.testId, stepId: step.id, domHash, cachedSelector: seed, band: step.target!.resolution!.band });
+    return { locator: ctx.page.locator(seed), source: "cached" };  // warm the cache for this domHash
   }
-  // cached miss → deterministic resolver heal (re-ground this step)
-  const res = await grounding.reground(ctx.test, step.id);       // LLD-003 §7
-  if (res.band !== "low") {
-    ctx.cache.updateSelector(step.id, res.cachedSelector);       // flag "healed" + log
-    return { locator: ctx.page.locator(res.cachedSelector!), source: "resolver" };
-  }
+
+  // 3. deterministic runtime heal (re-ground this step). The healing service — the single owner of the
+  //    heal state machine (LLD-006) — writes the new selector to cache + audit on success.
+  const outcome = await healing.runtimeHeal(ctx.test, step.id, ctx.page);   // LLD-006 §3
+  if (outcome.status === "healed")
+    return { locator: ctx.page.locator(outcome.cachedSelector), source: "resolver" };
+
   return { locator: null, source: "none" };                      // → STALE (SPEC-003 §7)
 }
 ```
+
+Because a confident heal is persisted to the cache under the *new* `domHash`, the next run on the changed
+page hits step 1 directly — the same step is not re-healed every run. The **versioned artifact is never
+rewritten at run time** (§9); only the regenerable cache changes.
 
 Then `act()` dispatches the Playwright action for `step.action` (click/type/select/keypress/submit/…).
 `navigate`/`wait` skip location. All in-page DOM logic lives in typed `in-page/` modules (no string-eval).
@@ -99,15 +118,15 @@ and DB steps.
 ## 6. Assertion engine (`assert.ts`)
 
 - Evaluates `preconditions`, `expectedOutcome[]`, and `assertions[]` per SPEC-003 §3–4.
-- Implements **negative-test inversion** (SPEC-003 §6): if the spec declares an expected rejection, invert
-  `passed`/`failed` for that step deterministically.
+- Implements **negative-test inversion** (SPEC-003 §6): when `step.negative === true` (LLD-001 §3), invert
+  `passed`/`failed` for that step deterministically — a correct app rejection passes, a wrong acceptance fails.
 - Distinguishes **locate failure** (→ `stale`) from **assertion failure** (→ `failed`) — never conflates
   drift with a real bug (SPEC-003 §7).
 
 ## 7. Verdict aggregation (`verdict.ts`)
 
-- Run `passed` iff no step `failed` and ≥1 step executed; `stale` steps fail the run and set a
-  `needsReview` flag consumed by healing (LLD-006).
+- Run `passed` iff no step `failed` and ≥1 step executed; `stale` steps fail the run and set
+  `RunReport.needsReview = true` (LLD-001 §7), consumed by healing (LLD-006).
 - Assigns a `failureClass` (timeout → stale/resolver → assertion/contract → network → action).
 - Emits `RunReport` (LLD-001 §7); persists history + screenshots to cache.
 
@@ -120,6 +139,7 @@ teardown — shared by grounding (LLD-003) and execution but never sharing live 
 ## 9. Determinism & boundaries
 
 - No generative LLM anywhere in this module. The only "intelligence" is the deterministic resolver
-  (LLD-004) invoked through `grounding.reground`.
+  (LLD-004), invoked through `healing.runtimeHeal` (LLD-006), which owns the re-ground state machine.
+  Execution never calls `grounding.reground` directly and never persists a heal decision itself.
 - Execution reads the grounded test + cache; it writes only regenerable artifacts (run history,
   screenshots) — never the versioned spec/grounded test.

@@ -1,7 +1,7 @@
 # SPEC-004: The Two-Level Healing Loop
 
 **Status:** Draft
-**Implements:** [ADR-002 §5](../../ADR-002.md), [ADR-001](../../ADR-001.md)
+**Implements:** [ADR-002 §5](../adr/ADR-002.md), [ADR-001](../adr/ADR-001.md)
 **LLD:** [LLD-006](../lld/LLD-006-healing.md)
 
 > Axiom heals **location drift** deterministically at runtime and repairs **intent/structural change**
@@ -52,25 +52,35 @@ A step is `stale` when runtime heal cannot re-locate it with confidence. Stale m
 Stale is drift the deterministic system honestly can't resolve (major redesign, element removed, semantic
 identity changed). It is surfaced, not hidden.
 
-## 4. Maintenance heal (explicit, LLM-assisted)
+## 4. Maintenance heal (explicit, agent-assisted)
 
-A developer (or agent via MCP `healing`) repairs a stale test:
+The developer's connected agent repairs a stale test — there is exactly **one** path, since Axiom has no
+LLM of its own to fall back to:
 
 ```
-repair payload = { Spec IR, Test Case, KDG }        [what the LLM needs to reason about the change]
-   │
-   ▼
-LLM re-authors the affected Tier-1 target(s)         (SPEC-001 rules; DOM-blind)
-   │
-   ▼
-re-ground the affected step(s)                        (SPEC-002)
-   │
-   ▼
-developer reviews the diff → accept → store           (versioned)
+                    repair payload = { Spec IR, Test Case, KDG }   [context the agent reasons over]
+                                        │
+                                        ▼
+                agent reads `healing`, re-authors the repair using its own model
+                                        │
+                                        ▼
+                submits the patched Spec IR via `updateTest` (spec is required)
+                                        │
+                                        ▼
+              agent re-authors ONLY the affected Tier-1 target(s)   (SPEC-001 rules; DOM-blind)
+                                        │
+                                        ▼
+                    re-ground the affected step(s)                (SPEC-002)
+                                        │
+                                        ▼
+                developer reviews the diff → accept → store        (versioned)
 ```
 
-The repair is **layer-targeted**: a broken selector re-grounds without touching intent; a genuinely
-changed intent re-authors the target without discarding the rest of the test.
+`axiom heal <testId>` (CLI, no agent) only **fetches and prints** the repair payload — it does not repair
+anything itself. The agent stays **DOM-blind** (it re-authors Tier-1 intent; grounding re-attaches the
+anchors), and the result is a **diff for review**, never an auto-commit. The repair is **layer-targeted**:
+a broken selector re-grounds without touching intent; a genuinely changed intent re-authors the target
+without discarding the rest of the test.
 
 ## 5. What heals vs. what doesn't
 

@@ -1,7 +1,7 @@
 # LLD-003: Grounding + Normalize (`core/grounding`)
 
 **Status:** Draft
-**Implements:** [SPEC-002](../specs/SPEC-002-grounding.md), [ADR-002 §2](../../ADR-002.md)
+**Implements:** [SPEC-002](../specs/SPEC-002-grounding.md), [ADR-002 §2](../adr/ADR-002.md)
 **Depends on:** [LLD-001](./LLD-001-shared-ir.md), [LLD-004](./LLD-004-resolver.md) (resolver), [LLD-007](./LLD-007-storage.md) (cache/artifacts)
 
 > Grounding drives a live Playwright run over an authored spec, extracts candidates, resolves each Tier-1
@@ -27,7 +27,9 @@ core/src/grounding/
 ```ts
 export interface GroundingService {
   ground(spec: SpecIR, opts: { vars?: Vars }): Promise<GroundingOutcome>;
-  reground(test: GroundedTest, stepId: string): Promise<StepResolution>;   // used by heal (LLD-006)
+  // Single-step re-ground used by runtime heal (LLD-006). It operates on the live page the caller
+  // (execution) is already driving — grounding does NOT open its own browser here.
+  reground(test: GroundedTest, stepId: string, page: Page): Promise<StepResolution>;
 }
 
 export type GroundingOutcome = {
@@ -51,10 +53,10 @@ for (const step of spec.steps) {
   const resolution = resolver.resolve(input);                       // LLD-004 (pure)
 
   if (gate.accept(resolution.band)) {                               // band ≥ medium
-    step.target!.resolution = withCachedSelector(resolution);       // Tier-2 anchors + cachedSelector
+    step.target!.resolution = withCachedSelector(resolution);       // winner-only + cachedSelector
     await act(page, step);                                          // ACT-to-advance
   } else {
-    step.target!.resolution = { ...resolution, status: "ungrounded", selected: null, cachedSelector: null };
+    step.target!.resolution = { ...toWinnerOnly(resolution), status: "ungrounded", selected: null, winner: null, cachedSelector: null };
     outcome.stoppedAt = step.id;                                    // dependent steps unreachable
     break;
   }
@@ -62,7 +64,11 @@ for (const step of spec.steps) {
 ```
 
 - **ACT-to-advance** (SPEC-002 §3): a grounded step performs its action so step *N+1* sees the right
-  state; the first `ungrounded` step halts advancement and returns a partial grounded test for review.
+  state; the first `ungrounded` step halts advancement and returns a **partial** grounded test for review.
+- **Partial grounding is valid** (LLD-001 §6): the halting step carries `status: "ungrounded"`; every
+  step *after* it is never reached, so its `target.resolution` is left **absent** (the field is optional).
+  The full ranked candidate list is written to `candidates.json`; the grounded test stores only the
+  winner (`withCachedSelector` returns a winner-only `GroundedResolution`).
 
 ## 4. `dom-extractor.ts` — typed in-page module
 
@@ -96,9 +102,10 @@ It also seeds the semantic embedding request (LLD-004) by passing `target.semant
 
 ## 7. `reground()` (for heal, LLD-006)
 
-Single-step variant: re-extract candidates on the current page and resolve one step's target. Returns a
-`StepResolution` the heal loop uses to decide healed-vs-stale. No ACT-to-advance (the run is already at
-that step).
+Single-step variant: re-extract candidates on the **caller's live page** (passed in by execution) and
+resolve one step's target. Returns a `StepResolution` the heal loop uses to decide healed-vs-stale. No
+ACT-to-advance (the run is already at that step), and grounding does not open its own browser — it reuses
+execution's page so the DOM state matches the run.
 
 ## 8. Determinism
 

@@ -24,11 +24,11 @@ Then by pipeline stage (each SPEC pairs with its LLD):
 
 ## Decisions these docs implement
 
-- **[ADR-001](../ADR-001.md)** — LLM authors/maintains only; runtime is deterministic.
-- **[ADR-002](../ADR-002.md)** — Spec IR → Grounding → Normalize → Resolver → execution; two-level heal; MCP/KDG.
-- **[ADR-003](../ADR-003.md)** — single-language TypeScript-on-Node; shared Zod IR; Fastify core; bundled dashboard; MCP-in-CLI.
-- **[PLAN-001](../PLAN-001.md)** — the stack + build-order plan these docs give depth to.
-- Background analysis: **[DISCUSSION.md](../DISCUSSION.md)** (resolver behavior, scope).
+- **[ADR-001](adr/ADR-001.md)** — LLM authors/maintains only; runtime is deterministic.
+- **[ADR-002](adr/ADR-002.md)** — Spec IR → Grounding → Normalize → Resolver → execution; two-level heal; MCP/KDG.
+- **[ADR-003](adr/ADR-003.md)** — single-language TypeScript-on-Node; shared Zod IR; Fastify core; bundled dashboard; MCP-in-CLI.
+- **[PLAN-001](PLAN-001.md)** — the stack + build-order plan these docs give depth to.
+- Background analysis: **[DISCUSSION.md](DISCUSSION.md)** (resolver behavior, scope).
 
 ## Canonical conventions (uniform across all docs)
 

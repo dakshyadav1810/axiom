@@ -1,3 +1,11 @@
 venv/
 __pycache__/
 .pytest_cache/
+**/node_modules/
+**/dist/
+.turbo/
+.axiom/
+packages/core/static/*
+!packages/core/static/.gitkeep
+*.log
+.DS_Store

@@ -1,7 +1,7 @@
 # LLD-007: Storage — Artifacts (JSON-in-git) + Cache (Drizzle/SQLite)
 
 **Status:** Draft
-**Implements:** [ADR-002 §3](../../ADR-002.md) (versioned vs ephemeral), [ADR-003 §3](../../ADR-003.md)
+**Implements:** [ADR-002 §3](../adr/ADR-002.md) (versioned vs ephemeral), [ADR-003 §3](../adr/ADR-003.md)
 **Depends on:** [LLD-001](./LLD-001-shared-ir.md) (all persisted shapes)
 
 > Two persistence tiers with a hard boundary: **versioned JSON artifacts** in git are the source of truth;
@@ -56,13 +56,12 @@ Regenerable, git-ignored (`.axiom/cache.db`). Holds the runtime fast path, embed
 
 | Table | Purpose | Key columns |
 |---|---|---|
-| `resolution_cache` | fast-path locator per step | `test_id, step_id, dom_hash → cached_selector, band, grounded_at` |
+| `resolution_cache` | **runtime fast path** — locator per step, per page state | `test_id, step_id, dom_hash → cached_selector, band, grounded_at` |
 | `embeddings` | text→vector cache for the semantic signal | `hash (sha256(model+text)) → vector (blob), model` |
-| `runs` | run history | `run_id, test_id, status, started_at, finished_at` |
-| `step_results` | per-step outcomes | `run_id, step_id, status, selection_source, band, duration_ms, screenshot_path` |
+| `runs` | run history | `run_id, test_id, status, needs_review, started_at, finished_at` |
+| `step_results` | per-step outcomes (screenshot path lives here — no separate table) | `run_id, step_id, status, selection_source, band, duration_ms, screenshot_path` |
 | `heal_audit` | heal/stale audit (LLD-006) | `test_id, step_id, event, from_sel, to_sel, band, reason, at` |
 | `review_queue` | stale author-review records | `test_id, step_id, url, screenshot_path, candidates_json, open` |
-| `screenshots` | artifact blobs/paths | `id, run_id, step_id, path` |
 
 ```ts
 export interface CacheStore {
@@ -79,8 +78,10 @@ export interface CacheStore {
 ## 4. Cache keys & invalidation
 
 - **Selector cache key = `(testId, stepId, domHash)`** — `domHash` is a stable hash of the page's
-  interactive-DOM signature, so a materially changed page misses the cache and triggers a re-ground
-  (runtime heal) rather than using a stale selector.
+  interactive-DOM signature, computed the same way at grounding and at run time. This table is the **first**
+  lookup in execution's locate ladder (LLD-005 §4): grounding seeds it, a confident runtime heal updates it,
+  and a materially changed page (different `domHash`) misses it and triggers a re-ground rather than using a
+  stale selector. Deleting it is safe — the ladder falls back to the versioned artifact's selector, then heal.
 - **Embedding key = `sha256(model + text)`** — model-scoped, so swapping the embedding model invalidates
   cleanly.
 - Cache entries are freely evictable; a miss simply re-derives via the resolver.

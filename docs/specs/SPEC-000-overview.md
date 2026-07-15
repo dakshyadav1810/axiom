@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Audience:** everyone (product, engineering, contributors, coding agents)
-**Sources of truth:** [ADR-001](../../ADR-001.md), [ADR-002](../../ADR-002.md), [ADR-003](../../ADR-003.md), [PLAN-001](../../PLAN-001.md), [AGENTS.md](../../AGENTS.md)
+**Sources of truth:** [ADR-001](../adr/ADR-001.md), [ADR-002](../adr/ADR-002.md), [ADR-003](../adr/ADR-003.md), [PLAN-001](../PLAN-001.md), [AGENTS.md](../../AGENTS.md)
 
 > This is the entry point to the Axiom design suite. It frames the product, defines the vocabulary
 > every other doc uses, and maps the docs to the decisions they implement. Read it first.

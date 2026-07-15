@@ -1,12 +1,31 @@
 {
-  "name": "cli",
-  "module": "index.ts",
-  "type": "module",
+  "name": "@axiom/cli",
+  "version": "0.1.0",
+  "license": "BUSL-1.1",
   "private": true,
-  "devDependencies": {
-    "@types/bun": "latest"
+  "type": "module",
+  "bin": {
+    "axiom": "./dist/index.js"
   },
-  "peerDependencies": {
-    "typescript": "^5.9.3"
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --clean --sourcemap",
+    "dev": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "@axiom/core": "workspace:*",
+    "@axiom/shared": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.2.0",
+    "commander": "^12.1.0",
+    "execa": "^9.5.2",
+    "open": "^10.1.0",
+    "ws": "^8.18.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/ws": "^8.5.13",
+    "tsup": "^8.3.5",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
   }
 }

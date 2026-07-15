@@ -1,7 +1,7 @@
 # SPEC-003: Execution & Assertions — Running a Test, Pass/Fail
 
 **Status:** Draft
-**Implements:** [ADR-002 §3–4](../../ADR-002.md), [ADR-001](../../ADR-001.md)
+**Implements:** [ADR-002 §3–4](../adr/ADR-002.md), [ADR-001](../adr/ADR-001.md)
 **LLD:** [LLD-005](../lld/LLD-005-execution.md) · **Schema:** [LLD-001 §3,§7](../lld/LLD-001-shared-ir.md)
 
 > How a grounded test runs deterministically, how each step is located and asserted, and exactly what
@@ -14,18 +14,20 @@
 - **Input:** a grounded test + `vars`.
 - **Output:** a `RunReport` — per-step results + an overall verdict, streamed live over WebSocket.
 - **Guarantee:** the run is a deterministic function of `(grounded test, live app, vars)`. Location uses
-  cached selector → deterministic resolver heal → **stale**; it never calls an LLM.
+  the selector cache → the grounded artifact's selector → deterministic resolver heal → **stale**; it never
+  calls an LLM.
 
 ## 2. Per-step lifecycle
 
 ```
 for each step (in order):
-  1. preconditions gate      (visible / enabled / url / modal)  → fail = STATE_BLOCKED
+  1. preconditions gate      (visible / enabled / modal_open / url_contains)  → fail = STATE_BLOCKED
   2. LOCATE (UI steps only):
-        cached selector unique & visible?  ── yes ─▶ use it
-                                            ── no  ─▶ resolver heal (re-ground this step)
-                                                        band ≥ medium → use winner (flag "healed")
-                                                        else          → STALE
+        selector cache hit (keyed by current page's domHash), unique & visible?  ── yes ─▶ use it
+        else grounded artifact's cachedSelector, unique & visible?               ── yes ─▶ use it (warm cache)
+        else resolver heal (re-ground this step):
+               band ≥ medium → use winner, write to cache (flag "healed")
+               else          → STALE
   3. ACT                      (click/type/select/… via the UI adapter; or API/DB request)
   4. ASSERT                   (preconditions met + expectedOutcome + assertions + signals)
   5. record StepResult        (status, selection source, band, timing, screenshot)
@@ -63,15 +65,17 @@ once), `optional` (downgrade to warning).
 ## 5. Run verdict
 
 - **Run passes** iff **no step failed** and **at least one step executed**. `warning`/`skipped` do not
-  fail a run; `stale` fails the run *and* flags it for maintenance (SPEC-004).
+  fail a run; `stale` fails the run *and* sets `RunReport.needsReview = true`, flagging it for maintenance
+  (SPEC-004).
 - **Failure classification** (priority): timeout → resolver/stale → contract/assertion → network → action.
 - The `RunReport` (LLD-001 §7) carries per-step status, the **selection source** (`cached`/`resolver`/
   `none` — so drift is visible), band, timings, and screenshots of key moments.
 
 ## 6. Negative tests — expected-outcome inversion
 
-For a spec authored as a **negative** case ("reject invalid login", XSS/SQLi probe, double-submit), the
-intent is that the app *should reject* the input. The runtime inverts the verdict:
+For a step authored as a **negative** case (`negative: true` in the step, LLD-001 §3 — "reject invalid
+login", XSS/SQLi probe, double-submit), the intent is that the app *should reject* the input. The runtime
+inverts the verdict:
 
 - the app **correctly rejects** (the step "fails" to proceed) → the test **passes**;
 - the app **wrongly accepts** (the step succeeds) → the test **fails**.

@@ -1,7 +1,7 @@
 # LLD-004: Multi-Signal Resolver (`core/resolver`)
 
 **Status:** Draft
-**Implements:** [ADR-002 §3](../../ADR-002.md), [ADR-003 §4](../../ADR-003.md) · **Prior art:** [DISCUSSION.md](../../DISCUSSION.md)
+**Implements:** [ADR-002 §3](../adr/ADR-002.md), [ADR-003 §4](../adr/ADR-003.md) · **Prior art:** [DISCUSSION.md](../DISCUSSION.md)
 **Depends on:** [LLD-001](./LLD-001-shared-ir.md) (Candidate/Resolution/SignalScores), [LLD-007](./LLD-007-storage.md) (embedding cache)
 
 > The differentiator. A **pure, deterministic** engine that scores live candidates against a Tier-1
@@ -80,18 +80,21 @@ is removed. `structure` is the old code's `selector` signal, renamed to the prod
 
 Ported from the tuned ladder in DISCUSSION.md (re-earned via golden cases, §8):
 
-1. **Affordance filter first** — drop candidates that can't perform the action.
+1. **Affordance filter first** — drop candidates that can't perform the action. Affordance is a **pure
+   gate**, not a scored signal: every surviving candidate has already passed it, so it carries **no
+   weight** (weighting a constant `1` would add a fixed offset to every candidate and silently shift the
+   effective band thresholds).
 2. **Characterize the page** — text density, icon ratio, `has_form`/`has_modal`, repeated structure.
-3. **Base weights:** `{ semantics: 0.4, context: 0.3, structure: 0.2, affordance: 0.1 }` — **index is not
-   weighted** (it's a filter/tiebreak). Affordance contributes as a 0/1 gate value.
+3. **Base weights:** `{ semantics: 0.45, context: 0.33, structure: 0.22 }` — they sum to `1.0`. **Index
+   is not weighted** (it's a tiebreak); **affordance is not weighted** (it's the gate in step 1).
 4. **Dynamic adjust:** icon-heavy → boost `structure`; text-heavy → boost `semantics`; form/modal → boost
    `context`. Any signal with no usable data for this target is zeroed; weights renormalize to 1.
 5. **Post-hoc correction:** a signal that scored 0 across *all* candidates is zeroed and weights
    renormalize (empty voters can't dilute real signal).
-6. **Final score:** `Σ weight_s · score_s` per candidate; sort desc.
+6. **Final score:** `Σ weight_s · score_s` per candidate over the three weighted signals; sort desc.
 
 ```ts
-finalScore(c) = semantics·wS + context·wC + structure·wStr + (affordancePassed?1:0)·wA
+finalScore(c) = semantics·wS + context·wC + structure·wStr    // affordance gates in step 1; index tiebreaks
 ```
 
 ## 6. Banding & select-best (`banding.ts`)
@@ -101,8 +104,9 @@ finalScore(c) = semantics·wS + context·wC + structure·wStr + (affordancePasse
 - **Margin:** the winner must lead the runner-up by `≥ CONFIDENCE_MARGIN (0.15)`; within margin, apply
   deterministic tiebreakers (recorded/durable anchor → bbox proximity → sibling index → nearby-text →
   DOM order). Persistent ambiguity → downgrade band (drives `ungrounded`/`stale`).
-- **Generalization** modulates strictness: `same_element`/`minimal` require the margin; `flexible`/
-  `aggressive` accept the best above threshold.
+- **Generalization** modulates strictness across the four `Generalization` enum values (LLD-001 §1):
+  `same_element` (strictest) requires the full margin; `any_matching` requires a reduced margin;
+  `flexible` and `aggressive` accept the best candidate above threshold without a margin check.
 - **Output:** `Resolution` (LLD-001 §5) — status, confidence, band, `selected`, `candidates[]` (grounding
   adds the `cachedSelector`).
 
@@ -125,3 +129,9 @@ guard). These are the parity gate against the retired Python resolver and guard 
 Band thresholds (0.5/0.7), the margin (0.15), base weights, and the embedding model are all config-driven
 and **untuned against real corpora**. The optimization objective is **minimizing false positives**
 (locating the wrong element confidently); thresholds move as benchmark data arrives.
+
+One known interaction to tune with the corpus: dynamic re-weighting + renormalization (§5) makes the final
+score's composition page-dependent, while the bands (§6) are absolute cutoffs. A score of `0.7` assembled
+from different weight mixes is not strictly the same evidence, so band boundaries should be validated
+per-page-archetype, not assumed globally stable. The golden cases (§8) pin current behavior but do not by
+themselves certify the thresholds.

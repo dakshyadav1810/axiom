@@ -1,11 +1,12 @@
 # LLD-002: Authoring Service (`core/authoring`)
 
 **Status:** Draft
-**Implements:** [SPEC-001](../specs/SPEC-001-authoring.md), [ADR-002 §1](../../ADR-002.md)
-**Depends on:** [LLD-001](./LLD-001-shared-ir.md) (SpecIR, AuthorRequest), [LLD-008](./LLD-008-mcp-server.md) (MCP)
+**Implements:** [SPEC-001](../specs/SPEC-001-authoring.md), [ADR-002 §1](../adr/ADR-002.md)
+**Depends on:** [LLD-001](./LLD-001-shared-ir.md) (SpecIR), [LLD-008](./LLD-008-mcp-server.md) (MCP)
 
-> The only subsystem that touches a **generative** LLM. It composes a DOM-blind `spec.json` from intent,
-> grounded in KDG context, and validates + stores it. It runs at authoring/maintenance time, never at run time.
+> Axiom holds no LLM provider client, no API key, and no prompt-building logic. The connected agent
+> (Claude Code, Cursor, ...) is the LLM — it authors the spec entirely in its own session and hands core
+> a finished `SpecIR`. Core's only job is to supply KDG context, then validate and store what comes back.
 
 ---
 
@@ -15,26 +16,21 @@
 core/src/authoring/
 ├── index.ts              # AuthoringService (public interface)
 ├── kdg-context.ts        # KdgContextProvider — assembles authoring context (getMap)
-├── prompt.ts             # PromptBuilder — AuthorRequest + KDG → LLM messages
-├── llm-client.ts         # LlmClient interface + providers (anthropic/openai/…) — CLI author path
-├── emitter.ts            # parse + validate LLM output → SpecIR
+├── emitter.ts             # normalize + validate agent-submitted spec → SpecIR
 └── store.ts              # persist/read spec.json via storage (LLD-007)
 ```
 
-## 2. Interfaces
+There is no `llm-client.ts` and no `prompt.ts` — nothing in this module ever calls out to a model
+provider. If a future version needs one, that's a new, explicit decision, not an implicit default.
+
+## 2. Interface
 
 ```ts
 export interface AuthoringService {
-  /** CLI path: core calls a configured LLM provider. */
-  author(req: AuthorRequest): Promise<SpecIR>;
-  /** Agent path: an external LLM (via MCP) submits a spec; core validates + stores it. */
+  /** The only way a spec is created: an agent has already authored it; core validates + stores. */
   submit(spec: unknown): Promise<SpecIR>;
-  /** Context an authoring LLM should read (also exposed as the MCP getMap tool). */
+  /** Context an authoring agent should read (also exposed as the MCP getMap tool). */
   context(entryUrl: string): Promise<KdgContext>;
-}
-
-export interface LlmClient {
-  complete(messages: LlmMessage[], opts: { jsonSchema: JSONSchema }): Promise<unknown>;
 }
 
 export interface KdgContextProvider {
@@ -42,58 +38,47 @@ export interface KdgContextProvider {
 }
 ```
 
-`KdgContext` is the versioned app-structure summary the LLM reads (see `core/kdg` — data structure
+`KdgContext` is the versioned app-structure summary the agent reads (see `core/kdg` — data structure
 deferred; the *contract* is: routes/pages, per-page forms & controls with roles/labels, conditionals,
-and parent/child containment). Absent a KDG, `context()` returns an empty context and authoring proceeds
+and parent/child containment). Absent a KDG, `context()` returns an empty context and the agent authors
 from intent alone.
 
-## 3. `author()` algorithm (CLI path)
+## 3. `submit()` algorithm
 
 ```ts
-async author(req) {
-  AuthorRequest.parse(req);
-  const ctx = await this.kdg.build(req.entry);
-  const messages = this.prompt.build(req, ctx);      // system: rules from SPEC-001 §4
-  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-    const raw = await this.llm.complete(messages, { jsonSchema: specJsonSchema });
-    const parsed = SpecIR.safeParse(this.emitter.normalize(raw));
-    if (parsed.success && this.lint(parsed.data).ok) {
-      return this.store.save(parsed.data);           // status: authored/ungrounded
-    }
-    messages.push(this.prompt.repair(parsed));       // feed validation errors back
-  }
-  throw new AuthoringError("spec did not validate after retries");
+async submit(raw) {
+  const parsed = SpecIR.safeParse(this.emitter.normalize(raw));
+  if (!parsed.success) throw new AuthoringError(parsed.error.issues.map(i => i.message).join("; "));
+  const lint = lintSpec(parsed.data);
+  if (!lint.ok) throw new AuthoringError(lint.errors.join("; "));
+  return this.store.save(parsed.data);           // status: authored/ungrounded
 }
 ```
 
-- **`MAX_ATTEMPTS = 3`.** Each retry appends the Zod/lint error so the model self-corrects.
-- **`submit()`** (agent path) skips generation: it runs `emitter.normalize` + `SpecIR.parse` + `lint`
-  only. The agent *is* the LLM; core is the validator/store.
+- **No retry loop lives here.** If validation fails, the error is returned to the caller (the agent); any
+  retry with a corrected spec happens in the agent's own session, not inside core.
+- `emitter.normalize` repairs only trivial drift (snake/camel casing, missing defaults) before parsing —
+  it does not and cannot fix semantic mistakes, because it has no model to reason with.
 
-## 4. Prompt contract (`prompt.ts`)
-
-- **System:** the authoring rules from SPEC-001 §4 (DOM-blind; semantics as synonym bag; role required;
-  assert an observable outcome; negative intents; vars not secrets) + the `SpecIR` JSON schema.
-- **User:** `intent`, `entry`, `vars` (keys only, never values), optional seed `assertions`, and the
-  compact `KdgContext`.
-- **Output contract:** strict JSON conforming to `SpecIR`. Provider JSON-mode + schema is used where
-  available; `emitter.normalize` repairs trivial drift (snake/camel, missing defaults) before parsing.
-
-## 5. Lint rules (beyond schema)
+## 4. Lint rules (beyond schema)
 
 - every `${var}` in any step/assertion exists in `flow.vars`;
 - each UI step with an actuating `action` has a `target`; `wait`/`navigate` have none;
 - at least one assertion or `expectedOutcome` across the spec (no assertion-free tests);
 - `semantics[]` non-empty and not just the role word; `role` is a known ARIA/implicit role.
 
-## 6. Determinism & caching
+## 5. Determinism & boundaries
 
-Authoring is **not** deterministic (it's generative) — which is exactly why it's confined here and gated
-by human review. Provider responses are cached by a hash of `(messages, model)` so re-authoring an
-unchanged request is free and reproducible within a session.
-
-## 7. Boundaries
-
+- `submit()` is deterministic: same input spec, same validation result. Whatever nondeterminism produced
+  the spec's content happened upstream, in the agent's own model call — outside this module and outside
+  Axiom's process entirely.
 - Authoring **never** sees the live DOM and **never** emits selectors (that's grounding, LLD-003).
 - It writes only `spec.json` via `storage` (LLD-007); it does not run tests.
-- The provider key lives in core config; the CLI/agent never hold it (invariant #6).
+- **No provider key exists anywhere in Axiom's config.** There is nothing to hold (invariant #6 is
+  satisfied trivially — there's no secret to leak because there's no provider client).
+
+## 6. Maintenance reuses this exact path
+
+The maintenance-heal flow (LLD-006 §6) does not add a second, provider-calling code path here. It builds
+a `RepairPayload` for the agent to read, and when the agent submits its fix, that call lands on this same
+`submit()` — a repair is just a resubmission of a (partially) new `SpecIR`.

@@ -1,7 +1,7 @@
 # LLD-000: Architecture — Monorepo, Packages, Process Model
 
 **Status:** Draft
-**Implements:** [ADR-003](../../ADR-003.md), [PLAN-001](../../PLAN-001.md)
+**Implements:** [ADR-003](../adr/ADR-003.md), [PLAN-001](../PLAN-001.md)
 **See also:** [SPEC-000](../specs/SPEC-000-overview.md), [LLD-001](./LLD-001-shared-ir.md)
 
 > The top-level implementation map: what the packages are, how they depend on each other, what runs in
@@ -105,7 +105,7 @@ intent ─▶ authoring(LLM via MCP) ─▶ spec.json ─▶ grounding(Playwrigh
 - **Errors/logging:** `pino` structured logs in core; typed error unions surfaced over REST/WS.
 - **Auth:** `jose` (JWT) — dev-mode bypass locally; real tokens for the paid/cloud tier.
 - **Testing:** Vitest everywhere; the resolver ships **golden-case tests** that lock the tuned behavior
-  documented in [DISCUSSION.md](../../DISCUSSION.md) (see LLD-004).
+  documented in [DISCUSSION.md](../DISCUSSION.md) (see LLD-004).
 - **Naming:** kebab-case files, PascalCase types, camelCase members; each subsystem exports a small
   interface + a default implementation.
 
