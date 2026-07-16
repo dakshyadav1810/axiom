@@ -112,7 +112,7 @@ async function startCore(config, coreEntry) {
   fs2.writeFileSync(PID_FILE, String(child.pid));
   child.unref();
   await waitForHealth(baseUrl(config), 15e3);
-  return child;
+  return child.pid;
 }
 function stopCore() {
   if (!fs2.existsSync(PID_FILE)) return false;

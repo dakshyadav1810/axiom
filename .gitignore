@@ -9,3 +9,5 @@ packages/core/static/*
 !packages/core/static/.gitkeep
 *.log
 .DS_Store
+/packages/dashboard/.next
+/bun.lock

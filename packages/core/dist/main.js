@@ -703,7 +703,7 @@ function extractInteractiveElementsInPage() {
     const tag = el.tagName.toLowerCase();
     const type = el.getAttribute("type");
     if (tag === "input" && type) return `input[type='${type}']`;
-    return xpathFor(el);
+    return `xpath=${xpathFor(el)}`;
   };
   return els.map((el) => {
     const rect = el.getBoundingClientRect();

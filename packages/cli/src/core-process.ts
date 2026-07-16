@@ -21,7 +21,10 @@ async function waitForHealth(url: string, timeoutMs: number): Promise<void> {
 }
 
 // Spawns core as a child process, records its PID so `axiom stop` (any terminal) can find it (LLD-009 §3).
-export async function startCore(config: AxiomConfig, coreEntry: string) {
+export async function startCore(
+  config: AxiomConfig,
+  coreEntry: string,
+): Promise<number | undefined> {
   const child = execa("node", [coreEntry], {
     env: { ...process.env, AXIOM_PORT: String(config.port) },
     detached: true,
@@ -32,7 +35,10 @@ export async function startCore(config: AxiomConfig, coreEntry: string) {
   child.unref();
 
   await waitForHealth(baseUrl(config), 15000);
-  return child;
+  // Return the pid, never `child` itself: execa's result is a thenable that settles only when core
+  // exits, and an async function adopts a returned thenable — so `return child` would make
+  // startCore() hang until the (long-lived) core process died.
+  return child.pid;
 }
 
 export function stopCore(): boolean {

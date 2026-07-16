@@ -91,7 +91,9 @@ export function extractInteractiveElementsInPage(): RawDomElement[] {
     const tag = el.tagName.toLowerCase();
     const type = el.getAttribute("type");
     if (tag === "input" && type) return `input[type='${type}']`;
-    return xpathFor(el);
+    // Playwright only auto-detects XPath when it starts with `//` or `..`; xpathFor() emits a
+    // single leading slash, so it must be tagged explicitly or it parses as CSS and throws.
+    return `xpath=${xpathFor(el)}`;
   };
 
   return els.map((el) => {
